@@ -6,11 +6,13 @@ import (
 )
 
 func TestGenerate(t *testing.T) {
-	x, err := Generate(32)
+	x, err := Generate(1024)
 
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	t.Log(x.String())
 
 	if !x.ProbablyPrime(100) {
 		t.Fatal("Generated number was not prime")
@@ -21,6 +23,4 @@ func TestGenerate(t *testing.T) {
 	if !y.ProbablyPrime(100) {
 		t.Fatal("(prime-1)/2 was not prime")
 	}
-
-	t.Log(x.String())
 }
