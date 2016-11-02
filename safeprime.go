@@ -1,53 +1,93 @@
 // Package safeprime is a small wrapper around openssl's BN_generate_prime_ex for generating safe primes.
 package safeprime
 
-/*
-#cgo pkg-config: libssl
-#include <openssl/bn.h>
-#include <openssl/rand.h>
-
-static void* openssl_generate_safeprime(int bitsize) {
-	BIGNUM* bignum;
-	bignum = BN_new();
-	if (bignum == NULL)
-		return NULL;
-
-	// NOTE: we do not initialize openssl's PRNG, as it is not necessary on machines that have /dev/urandom.
-	// Might want to do this for Windows machines.  See https://www.openssl.org/docs/manmaster/crypto/RAND_add.html
-	if (BN_generate_prime_ex(bignum, bitsize, 1, NULL, NULL, NULL) != 1) {
-		BN_free(bignum);
-		return NULL;
-	}
-
-	// Put the bignum's bytes in a char array
-	unsigned char* arr = malloc(bitsize/8);
-	if (arr == NULL) {
-		BN_free(bignum);
-		return NULL;
-	}
-	BN_bn2bin(bignum, arr);
-
-	BN_free(bignum);
-	return arr;
-}
-*/
-import "C"
 import (
+	"crypto/rand"
 	"errors"
 	"math/big"
+
+	"github.com/rainycape/dl"
 )
 
-// Generate uses openssl's BN_generate_prime_ex to generate a new safe prime of the given size.
-func Generate(size int) (*big.Int, error) {
-	// Generate the prime
-	bignum := C.openssl_generate_safeprime(C.int(size))
-	defer C.free(bignum)
-	if bignum == nil {
-		return nil, errors.New("openssl failed to generate a safe prime")
+var bnNew func() uintptr
+var bnFree func(uintptr)
+var bnGenPrime func(uintptr, int, int, uintptr, uintptr, uintptr) int
+var bnToHex func(uintptr) string
+
+// Generate tries to use openssl's BN_generate_prime_ex to generate a new safe prime of the given size;
+// if that fails it uses a pure Go algorithm.
+func Generate(bitsize int) (*big.Int, error) {
+	num, err := GenUsingOpenssl(bitsize)
+
+	if err != nil {
+		println("WARNING: using openssl failed, switching to (slower) Go algorithm")
+		return GenUsingGo(bitsize)
 	}
 
-	// Convert the C string to a big.Int and return it
+	return num, nil
+}
+
+// GenUsingOpenssl uses openssl's BN_generate_prime_ex to generate a new safe prime of the given size.
+func GenUsingOpenssl(bitsize int) (*big.Int, error) {
+	openssl, err := linkOpenssl()
+	if err != nil {
+		return nil, err
+	}
+	defer openssl.Close()
+
+	bignum := bnNew()
+	if bignum == 0 {
+		return nil, errors.New("BN_new could not allocate new bignum")
+	}
+	defer bnFree(bignum)
+
+	if r := bnGenPrime(bignum, bitsize, 1, 0, 0, 0); r != 1 {
+		return nil, errors.New("BN_generate_prime_ex failed")
+	}
+
 	x := new(big.Int)
-	x.SetBytes(C.GoBytes(bignum, C.int((size+7)/8)))
+	x.SetString(bnToHex(bignum), 16)
 	return x, nil
+}
+
+func linkOpenssl() (*dl.DL, error) {
+	openssl, err := dl.Open("libssl", 0)
+	if err != nil {
+		return nil, err
+	}
+
+	if err = openssl.Sym("BN_new", &bnNew); err != nil {
+		return nil, err
+	}
+
+	if err = openssl.Sym("BN_clear_free", &bnFree); err != nil {
+		return nil, err
+	}
+
+	if err = openssl.Sym("BN_generate_prime_ex", &bnGenPrime); err != nil {
+		return nil, err
+	}
+
+	if err = openssl.Sym("BN_bn2hex", &bnToHex); err != nil {
+		return nil, err
+	}
+
+	return openssl, nil
+}
+
+// GenUsingGo generates a safe prime in pure Go.
+func GenUsingGo(bitsize int) (*big.Int, error) {
+	p2 := new(big.Int)
+
+	for {
+		p, err := rand.Prime(rand.Reader, bitsize)
+		if err != nil {
+			return nil, err
+		}
+
+		p2.Rsh(p, 1) // p2 = (p - 1)/2
+		if p2.ProbablyPrime(20) {
+			return p, nil
+		}
+	}
 }
