@@ -2,7 +2,7 @@
 package safeprime
 
 /*
-#cgo pkg-config: libssl
+#cgo pkg-config: libssl libcrypto
 #include <openssl/bn.h>
 #include <openssl/rand.h>
 
