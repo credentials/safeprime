@@ -1,8 +1,9 @@
+// +build !android,!ios
+
 // Package safeprime is a small wrapper around openssl's BN_generate_prime_ex for generating safe primes.
 package safeprime
 
 import (
-	"crypto/rand"
 	"errors"
 	"math/big"
 
@@ -17,18 +18,17 @@ var bnToHex func(uintptr) string
 // Generate tries to use openssl's BN_generate_prime_ex to generate a new safe prime of the given size;
 // if that fails it uses a pure Go algorithm.
 func Generate(bitsize int) (*big.Int, error) {
-	num, err := GenUsingOpenssl(bitsize)
+	num, err := genUsingOpenssl(bitsize)
 
 	if err != nil {
-		println("WARNING: using openssl failed, switching to (slower) Go algorithm")
-		return GenUsingGo(bitsize)
+		return nil, errors.New("Failed to dynamically load OpenSSL")
 	}
 
 	return num, nil
 }
 
 // GenUsingOpenssl uses openssl's BN_generate_prime_ex to generate a new safe prime of the given size.
-func GenUsingOpenssl(bitsize int) (*big.Int, error) {
+func genUsingOpenssl(bitsize int) (*big.Int, error) {
 	openssl, err := linkOpenssl()
 	if err != nil {
 		return nil, err
@@ -73,21 +73,4 @@ func linkOpenssl() (*dl.DL, error) {
 	}
 
 	return openssl, nil
-}
-
-// GenUsingGo generates a safe prime in pure Go.
-func GenUsingGo(bitsize int) (*big.Int, error) {
-	p2 := new(big.Int)
-
-	for {
-		p, err := rand.Prime(rand.Reader, bitsize)
-		if err != nil {
-			return nil, err
-		}
-
-		p2.Rsh(p, 1) // p2 = (p - 1)/2
-		if p2.ProbablyPrime(20) {
-			return p, nil
-		}
-	}
 }
