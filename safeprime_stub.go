@@ -1,4 +1,4 @@
-// +build android ios
+// +build android ios windows
 
 package safeprime
 
