@@ -1,4 +1,4 @@
-// +build !android,!ios,!windows
+// +build !android,!ios,!windows,cgo
 
 // Package safeprime is a small wrapper around openssl's BN_generate_prime_ex for generating safe primes.
 package safeprime

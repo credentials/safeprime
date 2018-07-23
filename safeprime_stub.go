@@ -1,4 +1,4 @@
-// +build android ios windows
+// +build !cgo android ios windows
 
 package safeprime
 
